@@ -64,29 +64,33 @@
 -(void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
     [self initLocation];
     if ([call.method isEqualToString:@"changeSettings"]) {
-        if ([CLLocationManager locationServicesEnabled]) {
-            CLLocationAccuracy reducedAccuracy = kCLLocationAccuracyHundredMeters;
-            if (@available(iOS 14, *)) {
-                reducedAccuracy = kCLLocationAccuracyReduced;
-            }
-            NSDictionary *dictionary = @{
-                @"0" : @(kCLLocationAccuracyKilometer),
-                @"1" : @(kCLLocationAccuracyHundredMeters),
-                @"2" : @(kCLLocationAccuracyNearestTenMeters),
-                @"3" : @(kCLLocationAccuracyBest),
-                @"4" : @(kCLLocationAccuracyBestForNavigation),
-                @"5" : @(reducedAccuracy)
-            };
+        dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^(void)
+        {
+            if ([CLLocationManager locationServicesEnabled]) {
+                CLLocationAccuracy reducedAccuracy = kCLLocationAccuracyHundredMeters;
+                if (@available(iOS 14, *)) {
+                    reducedAccuracy = kCLLocationAccuracyReduced;
+                }
+                NSDictionary *dictionary = @{
+                    @"0" : @(kCLLocationAccuracyKilometer),
+                    @"1" : @(kCLLocationAccuracyHundredMeters),
+                    @"2" : @(kCLLocationAccuracyNearestTenMeters),
+                    @"3" : @(kCLLocationAccuracyBest),
+                    @"4" : @(kCLLocationAccuracyBestForNavigation),
+                    @"5" : @(reducedAccuracy)
+                };
 
-            self.clLocationManager.desiredAccuracy =
-                [dictionary[call.arguments[@"accuracy"]] doubleValue];
-            double distanceFilter = [call.arguments[@"distanceFilter"] doubleValue];
-            if (distanceFilter == 0){
-                distanceFilter = kCLDistanceFilterNone;
+                self.clLocationManager.desiredAccuracy =
+                    [dictionary[call.arguments[@"accuracy"]] doubleValue];
+                double distanceFilter = [call.arguments[@"distanceFilter"] doubleValue];
+                if (distanceFilter == 0){
+                    distanceFilter = kCLDistanceFilterNone;
+                }
+                self.clLocationManager.distanceFilter = distanceFilter;
+                result(@1);
             }
-            self.clLocationManager.distanceFilter = distanceFilter;
-            result(@1);
-        }
+        });
+
     } else if ([call.method isEqualToString:@"isBackgroundModeEnabled"]) {
         if (self.applicationHasLocationBackgroundMode) {
             if (@available(iOS 9.0, *)) {
@@ -108,31 +112,36 @@
             result(@0);
         }
     } else if ([call.method isEqualToString:@"getLocation"]) {
-        if (![CLLocationManager locationServicesEnabled]) {
-            result([FlutterError errorWithCode:@"SERVICE_STATUS_DISABLED" message:@"Failed to get location. Location services disabled" details:nil]);
-            return;
-        }
-        if ([CLLocationManager authorizationStatus] == kCLAuthorizationStatusDenied) {
-            // Location services are requested but user has denied
-            NSString *message = @"The user explicitly denied the use of location services for this "
-                "app or location services are currently disabled in Settings.";
-            result([FlutterError errorWithCode:@"PERMISSION_DENIED"
-                                       message:message
-                                       details:nil]);
-            return;
-        }
+        dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^(void)
+        {
+            if (![CLLocationManager locationServicesEnabled]) {
+                result([FlutterError errorWithCode:@"SERVICE_STATUS_DISABLED" message:@"Failed to get location. Location services disabled" details:nil]);
+                return;
+            }
 
-        self.flutterResult = result;
-        self.locationWanted = YES;
+            if ([CLLocationManager authorizationStatus] == kCLAuthorizationStatusDenied) {
+                // Location services are requested but user has denied
+                NSString *message = @"The user explicitly denied the use of location services for this "
+                    "app or location services are currently disabled in Settings.";
+                result([FlutterError errorWithCode:@"PERMISSION_DENIED"
+                                           message:message
+                                           details:nil]);
+                return;
+            }
 
-        if ([self isPermissionGranted]) {
-            [self.clLocationManager startUpdatingLocation];
-        } else {
-            [self requestPermission];
+            self.flutterResult = result;
+            self.locationWanted = YES;
+
             if ([self isPermissionGranted]) {
                 [self.clLocationManager startUpdatingLocation];
+            } else {
+                [self requestPermission];
+                if ([self isPermissionGranted]) {
+                    [self.clLocationManager startUpdatingLocation];
+                }
             }
-        }
+        });
+
     } else if ([call.method isEqualToString:@"hasPermission"]) {
         if ([self isPermissionGranted]) {
             result([self isHighAccuracyPermitted] ? @1 : @3);
@@ -150,11 +159,15 @@
             result(@2);
         }
     } else if ([call.method isEqualToString:@"serviceEnabled"]) {
-        if ([CLLocationManager locationServicesEnabled]) {
-            result(@1);
-        } else {
-            result(@0);
-        }
+        dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^(void)
+        {
+            if ([CLLocationManager locationServicesEnabled]) {
+                result(@1);
+            } else {
+                result(@0);
+            }
+        });
+
     } else if ([call.method isEqualToString:@"requestService"]) {
         if ([CLLocationManager locationServicesEnabled]) {
             result(@1);
@@ -226,7 +239,7 @@
 -(BOOL) isPermissionGranted {
     BOOL isPermissionGranted = NO;
     CLAuthorizationStatus status = [CLLocationManager authorizationStatus];
-    
+
 #if TARGET_OS_OSX
     if (status == kCLAuthorizationStatusAuthorized) {
         // Location services are available
@@ -255,7 +268,7 @@
     } else {
         isPermissionGranted = NO;
     }
-    
+
     return isPermissionGranted;
 }
 
@@ -287,7 +300,7 @@
         return;
     }
     CLLocation *location = locations.lastObject;
-    
+
     NSTimeInterval timeInSeconds = [location.timestamp timeIntervalSince1970];
     BOOL superiorToIos10 = [UIDevice currentDevice].systemVersion.floatValue >= 10;
     NSDictionary<NSString*,NSNumber*>* coordinatesDict =
@@ -302,7 +315,7 @@
         @"heading": @(location.course),
         @"time": @(((double) timeInSeconds) * 1000.0)  // in milliseconds since the epoch
     };
-    
+
     if (self.locationWanted) {
         self.locationWanted = NO;
         self.flutterResult(coordinatesDict);
